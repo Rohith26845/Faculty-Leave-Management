@@ -30,6 +30,7 @@ import {
   FormControl,
   FormHelperText,
   Select,
+  TableContainer,
 } from "@mui/material";
 import {
   Search,
@@ -38,22 +39,23 @@ import {
   CheckCircle,
   PersonAddAlt1,
   Close,
+  CloudUpload,
+  ErrorOutline,
+  ContentCopy,
+  CloudDownload, // ✅ ADD THIS
 } from "@mui/icons-material";
+
 import API, { getAvatarUrl } from "../api/axiosInstance";
 import { useAuth } from "../context/authContext";
 
 const uniq = (arr) => Array.from(new Set(arr));
 
-/**
- * Departments + programs availability (from your table)
- * Backend also enforces this (fat model), but we keep it in UI for better UX.
- */
 const COURSE_OPTIONS = ["B.Tech (UG)", "M.Tech (PG)", "Ph.D."];
 
 const DEPARTMENT_COURSE_MATRIX = {
   "Computer Engineering": ["B.Tech (UG)", "M.Tech (PG)", "Ph.D."],
   "Information Technology": ["B.Tech (UG)", "M.Tech (PG)", "Ph.D."],
-  "Mechanical Engineering": ["B.Tech (UG)", "M.Tech (PG)", "Ph.D."], // M.Tech ✔*
+  "Mechanical Engineering": ["B.Tech (UG)", "M.Tech (PG)", "Ph.D."],
   "Electronics & Computer Science": ["B.Tech (UG)"],
   "Electronics & Telecommunication": ["B.Tech (UG)"],
   "Automobile Engineering": ["B.Tech (UG)"],
@@ -68,6 +70,7 @@ const DESIGNATIONS = [
   "Assistant Professor",
   "Lab Assistant",
   "Administrative Staff",
+  "Lecturer",
 ];
 
 const FacultyDirectoryPage = () => {
@@ -97,13 +100,23 @@ const FacultyDirectoryPage = () => {
     email: "",
     password: "",
     department: "",
-    course: "", // UI field -> backend `program`
+    course: "",
     designation: "",
     phone: "",
-    role: "faculty", // faculty | hod
+    role: "faculty",
   });
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
+
+  /* CSV Import Dialog */
+  const [csvDialog, setCsvDialog] = useState({
+    open: false,
+    file: null,
+    preview: [],
+    loading: false,
+    results: null,
+  });
+  const [copied, setCopied] = useState(null);
 
   const isAdmin = user?.role === "admin";
   const isHod = user?.role === "hod";
@@ -111,11 +124,7 @@ const FacultyDirectoryPage = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Separate roles backend:
-      // Admin: /users/faculty/all
-      // HOD:   /users/faculty/department
       const url = isAdmin ? "/users/faculty/all" : "/users/faculty/department";
-
       const params = {};
       if (isAdmin && deptFilter !== "all") params.department = deptFilter;
 
@@ -211,7 +220,7 @@ const FacultyDirectoryPage = () => {
     }
   };
 
-  /* Admin Create */
+  /* Admin Create Individual Faculty */
   const openCreate = () => {
     setCreateError("");
     setCreateDlg({
@@ -236,7 +245,6 @@ const FacultyDirectoryPage = () => {
     const { name, value } = e.target;
 
     setCreateDlg((d) => {
-      // If department changes, reset course if invalid
       if (name === "department") {
         const allowed = DEPARTMENT_COURSE_MATRIX[value] || [];
         const nextCourse = allowed.includes(d.course) ? d.course : "";
@@ -263,7 +271,6 @@ const FacultyDirectoryPage = () => {
       return;
     }
 
-    // extra client-side validation (backend also checks)
     if (!allowedCoursesForSelectedDept.includes(course)) {
       setCreateError(
         "Selected course is not available for the selected department.",
@@ -277,9 +284,9 @@ const FacultyDirectoryPage = () => {
         name: createDlg.name,
         email: createDlg.email,
         password: createDlg.password,
-        role: createDlg.role, // faculty | hod
+        role: createDlg.role,
         department: createDlg.department,
-        program: createDlg.course, // ✅ matches backend schema
+        program: createDlg.course,
         designation: createDlg.designation,
         phone: createDlg.phone,
         subjects: [],
@@ -301,6 +308,181 @@ const FacultyDirectoryPage = () => {
     } finally {
       setCreating(false);
     }
+  };
+
+  /* CSV Import Handlers */
+  const handleCsvFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith(".csv")) {
+      alert("Please select a CSV file");
+      return;
+    }
+
+    setCsvDialog((prev) => ({
+      ...prev,
+      file,
+      loading: true,
+    }));
+
+    try {
+      const text = await file.text();
+
+      // Split by newline and filter out empty lines
+      let lines = text
+        .split("\n")
+        .map((line) => line.trim()) // Trim each line first
+        .filter((line) => line.length > 0); // Remove completely empty lines
+
+      if (lines.length < 2) {
+        alert("CSV file must have a header row and at least one data row");
+        setCsvDialog((prev) => ({
+          ...prev,
+          loading: false,
+          file: null,
+        }));
+        return;
+      }
+
+      // Get headers from first row
+      const headers = lines[0]
+        .split(",")
+        .map((h) => h.trim())
+        .filter((h) => h.length > 0);
+
+      // Preview: show first 5 data rows (skip header)
+      const previewLines = lines.slice(1, 6);
+
+      const preview = previewLines
+        .map((line) => {
+          // Split by comma and trim each value
+          const values = line.split(",").map((v) => v.trim());
+
+          // Create object with headers
+          return headers.reduce((obj, header, idx) => {
+            obj[header] = values[idx] || ""; // Handle missing columns
+            return obj;
+          }, {});
+        })
+        .filter((row) => {
+          // Filter out rows where all values are empty
+          return Object.values(row).some((val) => val.length > 0);
+        });
+
+      if (preview.length === 0) {
+        alert("CSV file has no valid data rows");
+        setCsvDialog((prev) => ({
+          ...prev,
+          loading: false,
+          file: null,
+        }));
+        return;
+      }
+
+      setCsvDialog((prev) => ({
+        ...prev,
+        preview,
+        loading: false,
+        open: true,
+      }));
+    } catch (err) {
+      alert(`Error reading file: ${err.message}`);
+      setCsvDialog((prev) => ({
+        ...prev,
+        loading: false,
+        file: null,
+      }));
+    }
+  };
+
+  const handleCsvImport = async () => {
+    if (!csvDialog.file) return;
+
+    setCsvDialog((prev) => ({ ...prev, loading: true }));
+
+    try {
+      const formData = new FormData();
+      formData.append("file", csvDialog.file);
+
+      const { data } = await API.post("/auth/import-csv", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      setCsvDialog((prev) => ({
+        ...prev,
+        results: data,
+        loading: false,
+      }));
+
+      setTimeout(() => fetchData(), 1000);
+    } catch (err) {
+      setCsvDialog((prev) => ({
+        ...prev,
+        loading: false,
+      }));
+      alert(`Import failed: ${err.response?.data?.message || err.message}`);
+    }
+  };
+
+  const copyPassword = (password) => {
+    navigator.clipboard.writeText(password);
+    setCopied(password);
+    setTimeout(() => setCopied(null), 2000);
+  };
+
+  const handleDownloadPasswords = async () => {
+    if (!csvDialog.results) return;
+
+    setCsvDialog((prev) => ({ ...prev, loading: true }));
+
+    try {
+      // ✅ Tell axios to expect blob/text response
+      const response = await API.post(
+        "/auth/export-passwords",
+        {
+          results: csvDialog.results.results,
+        },
+        {
+          responseType: "blob", // ✅ KEY FIX: Get response as blob
+        },
+      );
+
+      // Create blob from response
+      const blob = new Blob([response.data], {
+        type: "text/csv;charset=utf-8;",
+      });
+
+      // Create download link
+      const link = document.createElement("a");
+      const url = URL.createObjectURL(blob);
+
+      link.href = url;
+      link.download = `faculty-passwords-${new Date().toISOString().split("T")[0]}.csv`;
+      document.body.appendChild(link);
+
+      // Trigger download
+      link.click();
+
+      // Cleanup
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Download error:", err);
+      alert(`Download failed: ${err.response?.data?.message || err.message}`);
+    } finally {
+      setCsvDialog((prev) => ({ ...prev, loading: false }));
+    }
+  };
+
+  const closeCsvDialog = () => {
+    setCsvDialog((prev) => ({
+      ...prev,
+      open: false,
+      results: null,
+      file: null,
+      preview: [],
+    }));
   };
 
   if (!isAdmin && !isHod) {
@@ -357,6 +539,56 @@ const FacultyDirectoryPage = () => {
           </Button>
         )}
       </Box>
+
+      {/* CSV Upload Section */}
+      {isAdmin && (
+        <Card sx={{ mb: 3, borderRadius: "8px", border: "2px dashed #c4b5fd" }}>
+          <CardContent sx={{ py: 2.5 }}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+              <CloudUpload sx={{ fontSize: 40, color: "#7c3aed" }} />
+              <Box sx={{ flex: 1 }}>
+                <Typography
+                  variant="subtitle1"
+                  sx={{ fontWeight: 700, mb: 0.5 }}
+                >
+                  Bulk Import Faculty & HOD
+                </Typography>
+                <Typography
+                  variant="body2"
+                  sx={{ color: "text.secondary", mb: 1 }}
+                >
+                  Upload CSV to add multiple faculty at once. Each will get a
+                  random password.
+                </Typography>
+                <input
+                  type="file"
+                  accept=".csv"
+                  onChange={handleCsvFileSelect}
+                  style={{ display: "none" }}
+                  id="csv-file-input"
+                />
+                <Button
+                  variant="outlined"
+                  size="small"
+                  onClick={() =>
+                    document.getElementById("csv-file-input").click()
+                  }
+                >
+                  Choose CSV File
+                </Button>
+                {csvDialog.file && (
+                  <Typography
+                    variant="caption"
+                    sx={{ ml: 1, color: "#059669" }}
+                  >
+                    ✓ {csvDialog.file.name}
+                  </Typography>
+                )}
+              </Box>
+            </Box>
+          </CardContent>
+        </Card>
+      )}
 
       <Card sx={{ borderRadius: "12px" }}>
         <CardContent sx={{ p: 0 }}>
@@ -590,7 +822,10 @@ const FacultyDirectoryPage = () => {
 
                       <TableCell>
                         <Typography
-                          sx={{ fontSize: "0.85rem", color: "text.secondary" }}
+                          sx={{
+                            fontSize: "0.85rem",
+                            color: "text.secondary",
+                          }}
                         >
                           {r.department}
                         </Typography>
@@ -598,7 +833,10 @@ const FacultyDirectoryPage = () => {
 
                       <TableCell>
                         <Typography
-                          sx={{ fontSize: "0.85rem", color: "text.secondary" }}
+                          sx={{
+                            fontSize: "0.85rem",
+                            color: "text.secondary",
+                          }}
                         >
                           {r.program || "—"}
                         </Typography>
@@ -607,7 +845,10 @@ const FacultyDirectoryPage = () => {
                       <TableCell>
                         {(r.subjects || []).length === 0 ? (
                           <Typography
-                            sx={{ fontSize: "0.82rem", color: "text.disabled" }}
+                            sx={{
+                              fontSize: "0.82rem",
+                              color: "text.disabled",
+                            }}
                           >
                             —
                           </Typography>
@@ -779,7 +1020,11 @@ const FacultyDirectoryPage = () => {
                 Add Faculty
               </Typography>
               <Typography
-                sx={{ fontSize: "0.85rem", color: "text.secondary", mt: 0.4 }}
+                sx={{
+                  fontSize: "0.85rem",
+                  color: "text.secondary",
+                  mt: 0.4,
+                }}
               >
                 Admin-only: create a new faculty/HOD account
               </Typography>
@@ -810,7 +1055,11 @@ const FacultyDirectoryPage = () => {
               }}
             >
               <Typography
-                sx={{ color: "#991b1b", fontWeight: 700, fontSize: "0.86rem" }}
+                sx={{
+                  color: "#991b1b",
+                  fontWeight: 700,
+                  fontSize: "0.86rem",
+                }}
               >
                 {createError}
               </Typography>
@@ -860,7 +1109,9 @@ const FacultyDirectoryPage = () => {
                 value={createDlg.email}
                 onChange={handleCreateChange}
                 size="small"
-                sx={{ "& .MuiOutlinedInput-root": { borderRadius: "12px" } }}
+                sx={{
+                  "& .MuiOutlinedInput-root": { borderRadius: "12px" },
+                }}
               />
             </Grid>
             <Grid item xs={12} md={5}>
@@ -881,7 +1132,9 @@ const FacultyDirectoryPage = () => {
                 value={createDlg.phone}
                 onChange={handleCreateChange}
                 size="small"
-                sx={{ "& .MuiOutlinedInput-root": { borderRadius: "12px" } }}
+                sx={{
+                  "& .MuiOutlinedInput-root": { borderRadius: "12px" },
+                }}
               />
             </Grid>
           </Grid>
@@ -906,7 +1159,9 @@ const FacultyDirectoryPage = () => {
                 value={createDlg.department}
                 onChange={handleCreateChange}
                 size="small"
-                sx={{ "& .MuiOutlinedInput-root": { borderRadius: "12px" } }}
+                sx={{
+                  "& .MuiOutlinedInput-root": { borderRadius: "12px" },
+                }}
               >
                 {DEPARTMENTS.map((d) => (
                   <MenuItem key={d} value={d} sx={{ fontSize: "0.9rem" }}>
@@ -1098,6 +1353,269 @@ const FacultyDirectoryPage = () => {
           >
             {creating ? "Creating..." : "Create Faculty"}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* CSV Import Preview & Results Dialog */}
+      <Dialog
+        open={csvDialog.open}
+        onClose={closeCsvDialog}
+        maxWidth="lg"
+        fullWidth
+        PaperProps={{
+          sx: { borderRadius: "12px" },
+        }}
+      >
+        <DialogTitle sx={{ fontWeight: 900 }}>
+          {csvDialog.results ? "Import Results" : "Preview CSV Data"}
+        </DialogTitle>
+        <DialogContent sx={{ py: 2 }}>
+          {csvDialog.results ? (
+            // Results View
+            <Box>
+              <Box
+                sx={{
+                  display: "flex",
+                  gap: 3,
+                  mb: 3,
+                  p: 2,
+                  bgcolor: "background.default",
+                  borderRadius: "8px",
+                }}
+              >
+                <Box>
+                  <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                    Total Rows
+                  </Typography>
+                  <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                    {csvDialog.results.summary.total}
+                  </Typography>
+                </Box>
+                <Box>
+                  <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                    Created
+                  </Typography>
+                  <Typography
+                    variant="h6"
+                    sx={{ fontWeight: 700, color: "#059669" }}
+                  >
+                    {csvDialog.results.summary.created}
+                  </Typography>
+                </Box>
+                <Box>
+                  <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                    Failed
+                  </Typography>
+                  <Typography
+                    variant="h6"
+                    sx={{ fontWeight: 700, color: "#dc2626" }}
+                  >
+                    {csvDialog.results.summary.failed}
+                  </Typography>
+                </Box>
+              </Box>
+
+              <TableContainer sx={{ maxHeight: 400 }}>
+                <Table size="small" stickyHeader>
+                  <TableHead>
+                    <TableRow sx={{ bgcolor: "background.default" }}>
+                      <TableCell>Status</TableCell>
+                      <TableCell>Name</TableCell>
+                      <TableCell>Email</TableCell>
+                      <TableCell>Details</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {csvDialog.results.results.map((result, idx) => (
+                      <TableRow key={idx}>
+                        <TableCell>
+                          {result.status === "success" ? (
+                            <CheckCircle
+                              sx={{
+                                color: "#059669",
+                                fontSize: 20,
+                              }}
+                            />
+                          ) : (
+                            <ErrorOutline
+                              sx={{
+                                color: "#dc2626",
+                                fontSize: 20,
+                              }}
+                            />
+                          )}
+                        </TableCell>
+                        <TableCell sx={{ fontWeight: 500 }}>
+                          {result.name}
+                        </TableCell>
+                        <TableCell>
+                          <Typography
+                            variant="body2"
+                            sx={{ fontSize: "0.85rem" }}
+                          >
+                            {result.email}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          {result.status === "success" ? (
+                            <Box>
+                              <Typography
+                                variant="caption"
+                                sx={{
+                                  display: "block",
+                                  color: "text.secondary",
+                                }}
+                              >
+                                Role: {result.role} | {result.designation}
+                              </Typography>
+                              <Box
+                                sx={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 0.5,
+                                  mt: 0.5,
+                                }}
+                              >
+                                <Typography
+                                  variant="caption"
+                                  sx={{
+                                    fontFamily: "monospace",
+                                    color: "#7c3aed",
+                                    fontWeight: 600,
+                                    p: 0.5,
+                                    bgcolor: "#f3f0ff",
+                                    borderRadius: "4px",
+                                    userSelect: "all",
+                                  }}
+                                >
+                                  {result.password}
+                                </Typography>
+                                <IconButton
+                                  size="small"
+                                  onClick={() => copyPassword(result.password)}
+                                  sx={{ p: 0.3 }}
+                                >
+                                  <ContentCopy
+                                    sx={{
+                                      fontSize: 14,
+                                      color:
+                                        copied === result.password
+                                          ? "#059669"
+                                          : "text.secondary",
+                                    }}
+                                  />
+                                </IconButton>
+                              </Box>
+                            </Box>
+                          ) : (
+                            <Typography
+                              variant="caption"
+                              sx={{ color: "#dc2626" }}
+                            >
+                              {result.reason}
+                            </Typography>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Box>
+          ) : (
+            // Preview View
+            <Box>
+              <Typography
+                variant="body2"
+                sx={{ mb: 2, color: "text.secondary" }}
+              >
+                Preview (showing first {csvDialog.preview.length} rows):
+              </Typography>
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow sx={{ bgcolor: "background.default" }}>
+                      <TableCell>Name</TableCell>
+                      <TableCell>Email</TableCell>
+                      <TableCell>Department</TableCell>
+                      <TableCell>Designation</TableCell>
+                      <TableCell>Role</TableCell>
+                      <TableCell>Program</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {csvDialog.preview.map((row, idx) => (
+                      <TableRow key={idx}>
+                        <TableCell>{row.name}</TableCell>
+                        <TableCell sx={{ fontSize: "0.85rem" }}>
+                          {row.email}
+                        </TableCell>
+                        <TableCell sx={{ fontSize: "0.85rem" }}>
+                          {row.department}
+                        </TableCell>
+                        <TableCell sx={{ fontSize: "0.85rem" }}>
+                          {row.designation}
+                        </TableCell>
+                        <TableCell>
+                          <Chip
+                            label={row.role}
+                            size="small"
+                            color={row.role === "hod" ? "error" : "default"}
+                            variant="outlined"
+                          />
+                        </TableCell>
+                        <TableCell sx={{ fontSize: "0.85rem" }}>
+                          {row.program || "-"}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Box>
+          )}
+        </DialogContent>
+
+        {/* ✅ UPDATED DIALOG ACTIONS WITH DOWNLOAD BUTTON */}
+        <DialogActions sx={{ px: 3, py: 2 }}>
+          <Button onClick={closeCsvDialog}>
+            {csvDialog.results ? "Close" : "Cancel"}
+          </Button>
+
+          {/* Download Passwords Button - Only show after successful import */}
+          {csvDialog.results && csvDialog.results.summary.created > 0 && (
+            <Button
+              variant="contained"
+              startIcon={<CloudDownload />}
+              onClick={handleDownloadPasswords}
+              disabled={csvDialog.loading}
+              sx={{
+                bgcolor: "#10b981",
+                "&:hover": { bgcolor: "#059669" },
+                boxShadow: "0 2px 4px rgba(16,185,129,0.2)",
+              }}
+            >
+              {csvDialog.loading ? "Downloading..." : "Download Passwords"}
+            </Button>
+          )}
+
+          {/* Import Button - Only show in preview */}
+          {!csvDialog.results && (
+            <Button
+              variant="contained"
+              onClick={handleCsvImport}
+              disabled={csvDialog.loading}
+              sx={{
+                bgcolor: "#7c3aed",
+                "&:hover": { bgcolor: "#6d28d9" },
+              }}
+            >
+              {csvDialog.loading && (
+                <CircularProgress size={20} sx={{ mr: 1 }} />
+              )}
+              Import
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
     </Box>

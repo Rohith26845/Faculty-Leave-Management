@@ -27,7 +27,7 @@ import {
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../../context/authContext";
 import { getAvatarUrl } from "../../api/axiosInstance";
-
+import { Description, Dashboard, People } from "@mui/icons-material";
 const DRAWER_WIDTH = 210;
 
 const navSections = [
@@ -49,6 +49,12 @@ const navSections = [
         roles: ["admin", "hod"],
       },
 
+      {
+        label: "Syllabus Management",
+        icon: <Description />, // ✅ Use BookOpen or FileText icon
+        path: "/syllabus-management",
+        roles: ["hod"], // ✅ CORRECT: ["hod"], // ✅ Only show for HOD
+      },
       {
         label: "Apply Leave",
         icon: <EventNote fontSize="small" />,

@@ -11,9 +11,8 @@ import manageLeavesPage from "./pages/manageLeavesPage";
 import leaveBalancePage from "./pages/leaveBalancePage";
 import substitutePage from "./pages/substitutePage";
 import profilePage from "./pages/profilePage";
-
-/* ✅ ADD THIS IMPORT */
 import facultyDirectoryPage from "./pages/facultyDirectoryPage";
+import syllabusManagementPage from "./pages/syllabusManagementPage"; // ✅ ADD THIS IMPORT
 
 import SideBar from "./components/layout/sideBar";
 import NavBar from "./components/layout/navBar";
@@ -164,7 +163,7 @@ const ProtectedLayout = ({ children }) => {
   );
 };
 
-/* ✅ OPTIONAL: role guard component (recommended) */
+/* ✅ Role guard component */
 const RoleGuard = ({ allow, children }) => {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
@@ -181,9 +180,8 @@ const AppRoutes = () => {
   const LeaveBalancePage = leaveBalancePage;
   const SubstitutePage = substitutePage;
   const ProfilePage = profilePage;
-
-  /* ✅ ADD THIS */
   const FacultyDirectoryPage = facultyDirectoryPage;
+  const SyllabusManagementPage = syllabusManagementPage; // ✅ ADD THIS
 
   return (
     <Routes>
@@ -241,13 +239,24 @@ const AppRoutes = () => {
         }
       />
 
-      {/* ✅ ADD THIS ROUTE */}
       <Route
         path="/faculty-directory"
         element={
           <ProtectedLayout>
             <RoleGuard allow={["admin", "hod"]}>
               <FacultyDirectoryPage />
+            </RoleGuard>
+          </ProtectedLayout>
+        }
+      />
+
+      {/* ✅ ADD THIS ROUTE FOR SYLLABUS MANAGEMENT */}
+      <Route
+        path="/syllabus-management"
+        element={
+          <ProtectedLayout>
+            <RoleGuard allow={["hod"]}>
+              <SyllabusManagementPage />
             </RoleGuard>
           </ProtectedLayout>
         }
