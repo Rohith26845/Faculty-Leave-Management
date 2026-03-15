@@ -23,6 +23,7 @@ import {
   Settings,
   Logout,
   School,
+  Schedule,
 } from "@mui/icons-material";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../../context/authContext";
@@ -41,7 +42,7 @@ const navSections = [
         roles: ["faculty", "admin", "hod"],
       },
 
-      /* ✅ NEW: Faculty Directory (Admin + HOD only) */
+      /* ✅ Faculty Directory (Admin + HOD only) */
       {
         label: "Faculty Directory",
         icon: <SupervisorAccount fontSize="small" />,
@@ -51,10 +52,19 @@ const navSections = [
 
       {
         label: "Syllabus Management",
-        icon: <Description />, // ✅ Use BookOpen or FileText icon
+        icon: <Description />,
         path: "/syllabus-management",
-        roles: ["hod"], // ✅ CORRECT: ["hod"], // ✅ Only show for HOD
+        roles: ["hod"],
       },
+
+      /* ✅ NEW: Timetable Generator (HOD only) */
+      {
+        label: "Timetable Generator",
+        icon: <Schedule fontSize="small" />,
+        path: "/timetable",
+        roles: ["hod"],
+      },
+
       {
         label: "Apply Leave",
         icon: <EventNote fontSize="small" />,

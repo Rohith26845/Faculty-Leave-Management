@@ -3,6 +3,8 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider, CssBaseline, Box } from "@mui/material";
 import { createTheme } from "@mui/material/styles";
 import { AuthProvider, useAuth } from "./context/authContext";
+import TimetableGenerationPage from "./pages/timetableGenerationPage";
+import TimetableEditorPage from "./pages/timetableEditorPage";
 
 import loginPage from "./pages/loginPage";
 import dashboardPage from "./pages/dashboardPage";
@@ -12,7 +14,7 @@ import leaveBalancePage from "./pages/leaveBalancePage";
 import substitutePage from "./pages/substitutePage";
 import profilePage from "./pages/profilePage";
 import facultyDirectoryPage from "./pages/facultyDirectoryPage";
-import syllabusManagementPage from "./pages/syllabusManagementPage"; // ✅ ADD THIS IMPORT
+import syllabusManagementPage from "./pages/syllabusManagementPage";
 
 import SideBar from "./components/layout/sideBar";
 import NavBar from "./components/layout/navBar";
@@ -181,7 +183,7 @@ const AppRoutes = () => {
   const SubstitutePage = substitutePage;
   const ProfilePage = profilePage;
   const FacultyDirectoryPage = facultyDirectoryPage;
-  const SyllabusManagementPage = syllabusManagementPage; // ✅ ADD THIS
+  const SyllabusManagementPage = syllabusManagementPage;
 
   return (
     <Routes>
@@ -189,7 +191,6 @@ const AppRoutes = () => {
         path="/login"
         element={user ? <Navigate to="/" replace /> : <LoginPage />}
       />
-
       <Route
         path="/"
         element={
@@ -203,6 +204,27 @@ const AppRoutes = () => {
         element={
           <ProtectedLayout>
             <ApplyLeavePage />
+          </ProtectedLayout>
+        }
+      />
+      {/* ✅ FIXED: Wrapped timetable routes with ProtectedLayout and RoleGuard */}
+      <Route
+        path="/timetable"
+        element={
+          <ProtectedLayout>
+            <RoleGuard allow={["hod"]}>
+              <TimetableGenerationPage />
+            </RoleGuard>
+          </ProtectedLayout>
+        }
+      />
+      <Route
+        path="/timetable/editor/:id?"
+        element={
+          <ProtectedLayout>
+            <RoleGuard allow={["hod"]}>
+              <TimetableEditorPage />
+            </RoleGuard>
           </ProtectedLayout>
         }
       />
@@ -238,7 +260,6 @@ const AppRoutes = () => {
           </ProtectedLayout>
         }
       />
-
       <Route
         path="/faculty-directory"
         element={
@@ -249,8 +270,6 @@ const AppRoutes = () => {
           </ProtectedLayout>
         }
       />
-
-      {/* ✅ ADD THIS ROUTE FOR SYLLABUS MANAGEMENT */}
       <Route
         path="/syllabus-management"
         element={
@@ -261,7 +280,6 @@ const AppRoutes = () => {
           </ProtectedLayout>
         }
       />
-
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
