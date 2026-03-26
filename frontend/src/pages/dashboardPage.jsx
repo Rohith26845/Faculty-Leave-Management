@@ -1,7 +1,6 @@
 import PredictiveInsightsCard from "../components/PredictiveInsightsCard";
 import DepartmentPredictiveCard from "../components/DepartmentPredictiveCard";
-import SubscriberAnalytics from "../components/SubscriberAnalytics";
-import InsightsSkeleton from "../components/InsightsSkeleton";
+import LeaveAnalytics from "../components/LeaveAnalytics";
 import {
   BeachAccess,
   LocalHospital,
@@ -391,60 +390,6 @@ const CollegeStaffIDCard = ({ user }) => {
           </Box>
         </Box>
       </Box>
-    </Box>
-  );
-};
-
-/* ── Mini bar chart ──────────────────────────────────────── */
-const MiniBarChart = ({ data, barColor, accentColor }) => {
-  const max = Math.max(...data, 1);
-  return (
-    <Box
-      sx={{
-        display: "flex",
-        alignItems: "flex-end",
-        gap: "3px",
-        height: 72,
-        mt: 1.5,
-      }}
-    >
-      {data.map((v, i) => {
-        const isHighest = v === Math.max(...data) && v > 0;
-        return (
-          <Box
-            key={i}
-            sx={{
-              flex: 1,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: "2px",
-            }}
-          >
-            {isHighest && (
-              <Typography
-                sx={{
-                  fontSize: "0.6rem",
-                  color: "text.primary",
-                  fontWeight: 700,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {v}
-              </Typography>
-            )}
-            <Box
-              sx={{
-                width: "100%",
-                height: `${Math.max((v / max) * 52, v > 0 ? 6 : 3)}px`,
-                borderRadius: "2px 2px 0 0",
-                bgcolor: isHighest ? accentColor : barColor,
-                transition: "height 0.3s",
-              }}
-            />
-          </Box>
-        );
-      })}
     </Box>
   );
 };
@@ -2300,7 +2245,7 @@ const DashboardPage = () => {
                 System-wide leave management and analytics
               </Typography>
             </Box>
-            <SubscriberAnalytics />
+            <LeaveAnalytics />
             <InstitutionalAnalytics leaves={leaves} allUsers={allUsers} />
             <PredictiveInsightsCard />
             <AdminLeaveMonthlyTable leaves={leaves} allUsers={allUsers} />
