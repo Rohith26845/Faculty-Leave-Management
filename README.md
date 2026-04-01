@@ -56,6 +56,13 @@ How to run the project.
 2. Start the frontend: cd frontend && npm run dev
 3. Access the app at http://localhost:5173
 
+## 📜 API Documentation
+
+Comprehensive REST API reference (endpoints, request/response samples, and environment variables) is available on Postman:
+
+- Live docs: https://documenter.getpostman.com/view/46068711/2sBXinFq2U
+- Collection format: Exportable directly from the Postman page above for team import and testing.
+
 ## 📈 Results
 - Accuracy: Predictive model achieves 85% accuracy in identifying high-risk leave weeks
 - Outputs: Real-time analytics dashboard, leave approval notifications, substitute assignments
