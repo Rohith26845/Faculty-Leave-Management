@@ -2,9 +2,19 @@ const express = require("express");
 const router = express.Router();
 const User = require("../models/userModel");
 const { protect } = require("../middleware/auth");
-const path = require("path");
-const fs = require("fs");
 const upload = require("../middleware/upload");
+const cloudinary = require("../config/cloudinary");
+
+const uploadToCloudinary = (fileBuffer, folder) =>
+  new Promise((resolve, reject) => {
+    cloudinary.uploader
+      .upload_stream({ folder }, (err, result) => {
+        if (err) return reject(err);
+        resolve(result);
+      })
+      .end(fileBuffer);
+  });
+
 router.post("/avatar", protect, upload.single("avatar"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: "No file uploaded" });
@@ -12,13 +22,19 @@ router.post("/avatar", protect, upload.single("avatar"), async (req, res) => {
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    // delete old avatar
-    if (user.avatar) {
-      const oldPath = path.join(__dirname, "../", user.avatar);
-      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+    // delete old avatar in Cloudinary
+    if (user.avatarPublicId) {
+      try {
+        await cloudinary.uploader.destroy(user.avatarPublicId);
+      } catch (e) {
+        console.warn("Cloudinary delete failed (avatar):", e.message);
+      }
     }
 
-    user.avatar = `/uploads/avatars/${req.file.filename}`;
+    const result = await uploadToCloudinary(req.file.buffer, "faculty-avatars");
+
+    user.avatar = result.secure_url;
+    user.avatarPublicId = result.public_id;
     await user.save();
 
     return res.json({
@@ -26,7 +42,8 @@ router.post("/avatar", protect, upload.single("avatar"), async (req, res) => {
       avatar: user.avatar,
     });
   } catch (error) {
-    return res.status(500).json({ message: error.message });
+    console.error("Avatar upload error:", error);
+    return res.status(500).json({ message: error.message || "Upload failed" });
   }
 });
 
@@ -35,97 +52,22 @@ router.delete("/avatar", protect, async (req, res) => {
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    if (user.avatar) {
-      const filePath = path.join(__dirname, "../", user.avatar);
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-      user.avatar = null;
-      await user.save();
+    if (user.avatarPublicId) {
+      try {
+        await cloudinary.uploader.destroy(user.avatarPublicId);
+      } catch (e) {
+        console.warn("Cloudinary delete failed (avatar):", e.message);
+      }
     }
+
+    user.avatar = null;
+    user.avatarPublicId = null;
+    await user.save();
 
     return res.json({ message: "Avatar removed successfully" });
   } catch (error) {
-    return res.status(500).json({ message: error.message });
-  }
-});
-
-router.get("/substitutes", protect, async (req, res) => {
-  try {
-    // faculty/hod/admin can call, but result is restricted to caller's department
-    const users = await User.find({
-      department: req.user.department,
-      role: "faculty",
-      _id: { $ne: req.user._id },
-      isAvailable: { $ne: false },
-    })
-      .select("-password")
-      .sort({ name: 1 });
-
-    return res.json(users);
-  } catch (error) {
-    return res.status(500).json({ message: error.message });
-  }
-});
-
-/* Admin-only list all */
-router.get("/faculty/all", protect, async (req, res) => {
-  try {
-    if (req.user.role !== "admin")
-      return res.status(403).json({ message: "Admin access required" });
-
-    const { department } = req.query;
-    const query = {};
-    if (department) query.department = department;
-
-    const users = await User.find(query)
-      .select("-password")
-      .sort({ department: 1, name: 1 });
-    return res.json(users);
-  } catch (error) {
-    return res.status(500).json({ message: error.message });
-  }
-});
-
-/* HOD-only list department */
-router.get("/faculty/department", protect, async (req, res) => {
-  try {
-    if (req.user.role !== "hod")
-      return res.status(403).json({ message: "HOD access required" });
-
-    const users = await User.find({ department: req.user.department })
-      .select("-password")
-      .sort({ name: 1 });
-
-    return res.json(users);
-  } catch (error) {
-    return res.status(500).json({ message: error.message });
-  }
-});
-
-/* HOD-only allocate subjects using fat model method */
-router.put("/:id/subjects", protect, async (req, res) => {
-  try {
-    const teacher = await User.assignSubjectsByHod(
-      req.user,
-      req.params.id,
-      req.body.subjects,
-    );
-
-    return res.json({
-      message: "Subjects updated successfully",
-      user: {
-        _id: teacher._id,
-        name: teacher.name,
-        email: teacher.email,
-        role: teacher.role,
-        department: teacher.department,
-        program: teacher.program,
-        designation: teacher.designation,
-        subjects: teacher.subjects,
-        avatar: teacher.avatar,
-      },
-    });
-  } catch (error) {
-    return res.status(error.statusCode || 500).json({ message: error.message });
+    console.error("Avatar delete error:", error);
+    return res.status(500).json({ message: error.message || "Delete failed" });
   }
 });
 

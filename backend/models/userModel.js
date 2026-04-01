@@ -14,6 +14,7 @@ const DEPARTMENT_PROGRAM_MATRIX = {
   "Electronics & Telecommunication": ["B.Tech (UG)"],
   "Automobile Engineering": ["B.Tech (UG)"],
   "Electronics Engineering": ["M.Tech (PG)", "Ph.D."],
+  Administration: [],
 };
 
 const DEPARTMENTS = Object.keys(DEPARTMENT_PROGRAM_MATRIX);
@@ -75,6 +76,7 @@ const userSchema = new mongoose.Schema(
     designation: { type: String, trim: true },
     phone: { type: String, trim: true },
     avatar: { type: String },
+    avatarPublicId: { type: String },
 
     /**
      * ✅ Policy-required HR metadata

@@ -9,6 +9,7 @@ const Timetable = require("../models/timetableModel");
 const FacultyTimetable = require("../models/facultyTimetableModel");
 const { protect } = require("../middleware/auth");
 const upload = require("../middleware/leaveUpload");
+const cloudinary = require("../config/cloudinary");
 
 const {
   suggestSubstitutes,
@@ -17,6 +18,17 @@ const {
   generateRecommendations,
   detectAnomalies,
 } = require("../utils/aiEngine");
+
+/* ─── Cloudinary helper ─────────────────────────────────────── */
+const uploadToCloudinary = (fileBuffer, folder) =>
+  new Promise((resolve, reject) => {
+    cloudinary.uploader
+      .upload_stream({ folder, resource_type: "auto" }, (err, result) => {
+        if (err) return reject(err);
+        resolve(result);
+      })
+      .end(fileBuffer);
+  });
 
 /* ─── constants ──────────────────────────────────────────────── */
 const ADVANCE_NOTICE_EXEMPT = ["casual", "medical"];
@@ -97,8 +109,14 @@ const enumerateDaysInclusive = (startDate, endDate) => {
   return days;
 };
 
-const extractFacultySlotsFromTimetables = (timetables, facultyId, dayNameSet) => {
-  const fid = facultyId?.toString?.() ? facultyId.toString() : String(facultyId);
+const extractFacultySlotsFromTimetables = (
+  timetables,
+  facultyId,
+  dayNameSet,
+) => {
+  const fid = facultyId?.toString?.()
+    ? facultyId.toString()
+    : String(facultyId);
   const slots = new Set();
 
   for (const tt of timetables) {
@@ -124,7 +142,11 @@ const extractFacultySlotsFromTimetables = (timetables, facultyId, dayNameSet) =>
 
       const batches = Array.isArray(cell.batches) ? cell.batches : [];
       for (const b of batches) {
-        const bf = b?.faculty?.toString?.() ? b.faculty.toString() : b?.faculty ? String(b.faculty) : null;
+        const bf = b?.faculty?.toString?.()
+          ? b.faculty.toString()
+          : b?.faculty
+            ? String(b.faculty)
+            : null;
         if (bf && bf === fid) {
           slots.add(String(key));
           return;
@@ -140,7 +162,11 @@ const extractBusySlotsForCandidate = (timetables, candidateId, dayNameSet) => {
   return extractFacultySlotsFromTimetables(timetables, candidateId, dayNameSet);
 };
 
-const computeLeaveAffectedSlotsFromFacultyUpload = async (facultyId, sd, ed) => {
+const computeLeaveAffectedSlotsFromFacultyUpload = async (
+  facultyId,
+  sd,
+  ed,
+) => {
   const tt = await FacultyTimetable.findOne({ faculty: facultyId }).lean();
   const busy = new Set((tt?.busySlots || []).map((s) => String(s)));
   if (busy.size === 0) return new Set();
@@ -320,11 +346,9 @@ router.post("/", protect, upload.single("attachment"), async (req, res) => {
       leaveType === "medical" && totalDays >= 3;
 
     if (req.file && leaveType !== "medical") {
-      return res
-        .status(400)
-        .json({
-          message: "Attachment upload is only allowed for medical leave.",
-        });
+      return res.status(400).json({
+        message: "Attachment upload is only allowed for medical leave.",
+      });
     }
     if (mlCertificateRequired && !req.file) {
       return res.status(400).json({
@@ -355,9 +379,10 @@ router.post("/", protect, upload.single("attachment"), async (req, res) => {
 
     // ✅ Substitute auto-suggest using timetable availability (AI + schedule constraints)
     const department = req.user.department;
-    const timetables = await Timetable.find({ department, isActive: true }).select(
-      "schedule department",
-    );
+    const timetables = await Timetable.find({
+      department,
+      isActive: true,
+    }).select("schedule department");
 
     const dayNamesInRange = new Set(
       enumerateDaysInclusive(sd, ed)
@@ -387,7 +412,11 @@ router.post("/", protect, upload.single("attachment"), async (req, res) => {
     const timetableFiltered = availableFaculty.filter((candidate) => {
       if (candidate._id.toString() === req.user._id.toString()) return false;
       if (affectedSlots.size === 0) return true; // nothing to check
-      const busy = extractBusySlotsForCandidate(timetables, candidate._id, dayNamesInRange);
+      const busy = extractBusySlotsForCandidate(
+        timetables,
+        candidate._id,
+        dayNamesInRange,
+      );
       for (const slot of affectedSlots) {
         if (busy.has(String(slot))) return false;
       }
@@ -397,6 +426,18 @@ router.post("/", protect, upload.single("attachment"), async (req, res) => {
     const autoSub =
       suggestSubstitutes(timetableFiltered, req.user)[0]?._id || null;
     const history = await Leave.find({ faculty: req.user._id });
+
+    /* Upload attachment to Cloudinary if present */
+    let attachmentUrl = null;
+    let attachmentPublicId = null;
+    if (req.file) {
+      const uploaded = await uploadToCloudinary(
+        req.file.buffer,
+        "leave-certificates",
+      );
+      attachmentUrl = uploaded.secure_url;
+      attachmentPublicId = uploaded.public_id;
+    }
 
     const leave = await Leave.create({
       faculty: req.user._id,
@@ -429,9 +470,8 @@ router.post("/", protect, upload.single("attachment"), async (req, res) => {
 
       mlCertificateRequired,
       mlCertificateReceived: false,
-      mlCertificateAttachment: req.file
-        ? `/uploads/leave-attachments/${req.file.filename}`
-        : null,
+      mlCertificateAttachment: attachmentUrl,
+      mlCertificatePublicId: attachmentPublicId,
       fitnessCertificateRequired,
 
       aiPredictionScore: predictLeaveRisk(history),
@@ -564,7 +604,10 @@ router.put("/:id/approve", protect, async (req, res) => {
             .select("faculty busySlots")
             .lean();
           const byFaculty = new Map(
-            tts.map((t) => [String(t.faculty), new Set((t.busySlots || []).map(String))]),
+            tts.map((t) => [
+              String(t.faculty),
+              new Set((t.busySlots || []).map(String)),
+            ]),
           );
 
           // If a candidate has no uploaded timetable, we treat them as "unknown availability" and allow them.
@@ -599,7 +642,8 @@ router.put("/:id/approve", protect, async (req, res) => {
               recipient: leave.faculty._id,
               sender: req.user._id,
               type: "substitute_assigned",
-              message: "A substitute has been assigned for your approved leave.",
+              message:
+                "A substitute has been assigned for your approved leave.",
               relatedLeave: leave._id,
             },
           ]);

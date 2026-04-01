@@ -18,6 +18,7 @@ import {
 import dayjs from "dayjs";
 import API from "../api/axiosInstance";
 import { useAuth } from "../context/authContext";
+import { useNavigate } from "react-router-dom";
 
 const LEAVE_TYPES = [
   { key: "casual", label: "Casual Leave (CL)" },
@@ -29,6 +30,7 @@ const LEAVE_TYPES = [
 ];
 
 const ApplyLeavePage = () => {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const isFaculty = user?.role === "faculty";
 
@@ -140,32 +142,24 @@ const ApplyLeavePage = () => {
 
     try {
       if (attachment) {
-        // multipart
         const fd = new FormData();
         fd.append("leaveType", leaveType);
         fd.append("startDate", startDate);
         fd.append("endDate", endDate);
         fd.append("reason", reason.trim());
         fd.append("substituteRequested", substitute.name);
-
         fd.append("dayType", dayType);
         if (dayType === "HALF") fd.append("halfSession", halfSession);
-
-        // optional
         fd.append("affectedClasses", JSON.stringify([]));
         fd.append("isUrgent", "false");
         fd.append("isDuringExamPeriod", "false");
         fd.append("isDuringTeaching", "false");
+        fd.append("attachment", attachment); // matches backend upload.single("attachment")
 
-        fd.append("attachment", attachment); // MUST match backend upload.single("attachment")
-
-        // 1) navigate to dashboard
-        navigate("/dashboard");
-
-        // 2) OR if you stay on the page, trigger a refresh event:
-        window.dispatchEvent(new Event("leaves:changed"));
+        await API.post("/leaves", fd, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
       } else {
-        // JSON
         await API.post("/leaves", {
           leaveType,
           startDate,
@@ -188,11 +182,12 @@ const ApplyLeavePage = () => {
       setReason("");
       setSubstitute(null);
       setAttachment(null);
+      navigate("/dashboard");
+      window.dispatchEvent(new Event("leaves:changed"));
     } catch (e) {
       setError(
         e?.response?.data?.message || "Failed to submit leave application.",
       );
-      // keep dev logging
       console.error(
         "Leave submit error:",
         e?.response?.status,

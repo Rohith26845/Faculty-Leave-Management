@@ -140,11 +140,7 @@ const LeaveCard = ({ leave, onUpdate }) => {
     }
   };
 
-  const attachmentUrl =
-    leave?.mlCertificateAttachment &&
-    leave.mlCertificateAttachment.startsWith("/uploads")
-      ? `${import.meta.env.VITE_API_BASE_URL || "http://localhost:5000"}${leave.mlCertificateAttachment}`
-      : null;
+  const attachmentUrl = leave?.mlCertificateAttachment || null;
 
   return (
     <>

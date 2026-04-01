@@ -1,0 +1,781 @@
+diff --git a/backend/config/cloudinary.js b/backend/config/cloudinary.js
+new file mode 100644
+index 0000000..230793a
+--- /dev/null
++++ b/backend/config/cloudinary.js
+@@ -0,0 +1,9 @@
++const cloudinary = require("cloudinary").v2;
++
++cloudinary.config({
++  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
++  api_key: process.env.CLOUDINARY_API_KEY,
++  api_secret: process.env.CLOUDINARY_API_SECRET,
++});
++
++module.exports = cloudinary;
+diff --git a/backend/middleware/leaveUpload.js b/backend/middleware/leaveUpload.js
+index 8778c77..0b6a374 100644
+--- a/backend/middleware/leaveUpload.js
++++ b/backend/middleware/leaveUpload.js
+@@ -1,34 +1,15 @@
+ const multer = require("multer");
+-const path = require("path");
+-const fs = require("fs");
+-
+-const dir = path.join(__dirname, "..", "uploads", "leave-attachments");
+-if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+-
+-const storage = multer.diskStorage({
+-  destination: (req, file, cb) => cb(null, dir),
+-  filename: (req, file, cb) => {
+-    const ext = path.extname(file.originalname || "").toLowerCase();
+-    cb(null, `ml-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`);
+-  },
+-});
+-
+-const fileFilter = (req, file, cb) => {
+-  const ok = [
+-    "application/pdf",
+-    "image/jpeg",
+-    "image/png",
+-    "image/webp",
+-  ].includes(file.mimetype);
+-  if (!ok)
+-    return cb(
+-      new Error("Only PDF/JPG/PNG/WEBP files are allowed for certificate."),
+-    );
+-  cb(null, true);
+-};
+ 
+ module.exports = multer({
+-  storage,
+-  fileFilter,
++  storage: multer.memoryStorage(),
+   limits: { fileSize: 5 * 1024 * 1024 },
++  fileFilter: (req, file, cb) => {
++    const ok = [
++      "application/pdf",
++      "image/jpeg",
++      "image/png",
++      "image/webp",
++    ].includes(file.mimetype);
++    cb(ok ? null : new Error("Only PDF/JPG/PNG/WEBP allowed"), ok);
++  },
+ });
+diff --git a/backend/middleware/upload.js b/backend/middleware/upload.js
+index 5601717..e968368 100644
+--- a/backend/middleware/upload.js
++++ b/backend/middleware/upload.js
+@@ -1,28 +1,14 @@
+ const multer = require("multer");
+-const path = require("path");
+-const fs = require("fs");
+-
+-const uploadDir = path.join(__dirname, "../uploads/avatars");
+-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+-
+-const storage = multer.diskStorage({
+-  destination: (req, file, cb) => cb(null, uploadDir),
+-  filename: (req, file, cb) => {
+-    const ext = path.extname(file.originalname);
+-    cb(null, `avatar-${req.user._id}-${Date.now()}${ext}`);
+-  },
+-});
+-
+-const fileFilter = (req, file, cb) => {
+-  const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+-  if (allowed.includes(file.mimetype)) cb(null, true);
+-  else cb(new Error("Only JPEG, PNG, WEBP and GIF images are allowed"), false);
+-};
+ 
+ const upload = multer({
+-  storage,
+-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+-  fileFilter,
++  storage: multer.memoryStorage(),
++  limits: { fileSize: 5 * 1024 * 1024 },
++  fileFilter: (req, file, cb) => {
++    const ok = ["image/jpeg", "image/png", "image/webp", "image/gif"].includes(
++      file.mimetype,
++    );
++    cb(ok ? null : new Error("Only JPEG/PNG/WEBP/GIF allowed"), ok);
++  },
+ });
+ 
+ module.exports = upload;
+diff --git a/backend/models/leaveModel.js b/backend/models/leaveModel.js
+index 4b01df6..713a939 100644
+--- a/backend/models/leaveModel.js
++++ b/backend/models/leaveModel.js
+@@ -100,6 +100,7 @@ const leaveSchema = new mongoose.Schema(
+ 
+     // ✅ NEW: uploaded file path (pdf/image)
+     mlCertificateAttachment: { type: String, default: null },
++    mlCertificatePublicId: { type: String, default: null },
+ 
+     // Policy: ML >= 3 days => also provide fitness certificate on return (tracked as requirement flag)
+     fitnessCertificateRequired: { type: Boolean, default: false },
+diff --git a/backend/models/userModel.js b/backend/models/userModel.js
+index e0330ba..0d8a79f 100644
+--- a/backend/models/userModel.js
++++ b/backend/models/userModel.js
+@@ -14,6 +14,7 @@ const DEPARTMENT_PROGRAM_MATRIX = {
+   "Electronics & Telecommunication": ["B.Tech (UG)"],
+   "Automobile Engineering": ["B.Tech (UG)"],
+   "Electronics Engineering": ["M.Tech (PG)", "Ph.D."],
++  Administration: [],
+ };
+ 
+ const DEPARTMENTS = Object.keys(DEPARTMENT_PROGRAM_MATRIX);
+@@ -75,6 +76,7 @@ const userSchema = new mongoose.Schema(
+     designation: { type: String, trim: true },
+     phone: { type: String, trim: true },
+     avatar: { type: String },
++    avatarPublicId: { type: String },
+ 
+     /**
+      * ✅ Policy-required HR metadata
+diff --git a/backend/package-lock.json b/backend/package-lock.json
+index 9f00705..822b803 100644
+--- a/backend/package-lock.json
++++ b/backend/package-lock.json
+@@ -12,6 +12,7 @@
+         "@google/generative-ai": "^0.24.1",
+         "axios": "^1.13.6",
+         "bcryptjs": "^2.4.3",
++        "cloudinary": "^2.9.0",
+         "cors": "^2.8.5",
+         "csv-parser": "^3.2.0",
+         "dotenv": "^16.3.1",
+@@ -477,6 +478,18 @@
+         "fsevents": "~2.3.2"
+       }
+     },
++    "node_modules/cloudinary": {
++      "version": "2.9.0",
++      "resolved": "https://registry.npmjs.org/cloudinary/-/cloudinary-2.9.0.tgz",
++      "integrity": "sha512-F3iKMOy4y0zy0bi5JBp94SC7HY7i/ImfTPSUV07iJmRzH1Iz8WavFfOlJTR1zvYM/xKGoiGZ3my/zy64In0IQQ==",
++      "license": "MIT",
++      "dependencies": {
++        "lodash": "^4.17.21"
++      },
++      "engines": {
++        "node": ">=9"
++      }
++    },
+     "node_modules/combined-stream": {
+       "version": "1.0.8",
+       "resolved": "https://registry.npmjs.org/combined-stream/-/combined-stream-1.0.8.tgz",
+@@ -1152,6 +1165,12 @@
+         "node": ">=12.0.0"
+       }
+     },
++    "node_modules/lodash": {
++      "version": "4.17.21",
++      "resolved": "https://registry.npmjs.org/lodash/-/lodash-4.17.21.tgz",
++      "integrity": "sha512-v2kDEe57lecTulaDIuNTPy3Ry4gLGJ6Z1O3vE1krgXZNrsQ+LFTGHVxVjcXPs17LhbZVGedAJv8XZ1tvj5FvSg==",
++      "license": "MIT"
++    },
+     "node_modules/lodash.includes": {
+       "version": "4.3.0",
+       "resolved": "https://registry.npmjs.org/lodash.includes/-/lodash.includes-4.3.0.tgz",
+diff --git a/backend/package.json b/backend/package.json
+index fa9e3b1..1fa7c94 100644
+--- a/backend/package.json
++++ b/backend/package.json
+@@ -11,6 +11,7 @@
+     "@google/generative-ai": "^0.24.1",
+     "axios": "^1.13.6",
+     "bcryptjs": "^2.4.3",
++    "cloudinary": "^2.9.0",
+     "cors": "^2.8.5",
+     "csv-parser": "^3.2.0",
+     "dotenv": "^16.3.1",
+diff --git a/backend/routes/leaveRoutes.js b/backend/routes/leaveRoutes.js
+index cd7c720..0218ad5 100644
+--- a/backend/routes/leaveRoutes.js
++++ b/backend/routes/leaveRoutes.js
+@@ -9,6 +9,7 @@ const Timetable = require("../models/timetableModel");
+ const FacultyTimetable = require("../models/facultyTimetableModel");
+ const { protect } = require("../middleware/auth");
+ const upload = require("../middleware/leaveUpload");
++const cloudinary = require("../config/cloudinary");
+ 
+ const {
+   suggestSubstitutes,
+@@ -18,6 +19,17 @@ const {
+   detectAnomalies,
+ } = require("../utils/aiEngine");
+ 
++/* ─── Cloudinary helper ─────────────────────────────────────── */
++const uploadToCloudinary = (fileBuffer, folder) =>
++  new Promise((resolve, reject) => {
++    cloudinary.uploader
++      .upload_stream({ folder, resource_type: "auto" }, (err, result) => {
++        if (err) return reject(err);
++        resolve(result);
++      })
++      .end(fileBuffer);
++  });
++
+ /* ─── constants ──────────────────────────────────────────────── */
+ const ADVANCE_NOTICE_EXEMPT = ["casual", "medical"];
+ const ADVANCE_NOTICE_DAYS = 4; // working days
+@@ -97,8 +109,14 @@ const enumerateDaysInclusive = (startDate, endDate) => {
+   return days;
+ };
+ 
+-const extractFacultySlotsFromTimetables = (timetables, facultyId, dayNameSet) => {
+-  const fid = facultyId?.toString?.() ? facultyId.toString() : String(facultyId);
++const extractFacultySlotsFromTimetables = (
++  timetables,
++  facultyId,
++  dayNameSet,
++) => {
++  const fid = facultyId?.toString?.()
++    ? facultyId.toString()
++    : String(facultyId);
+   const slots = new Set();
+ 
+   for (const tt of timetables) {
+@@ -124,7 +142,11 @@ const extractFacultySlotsFromTimetables = (timetables, facultyId, dayNameSet) =>
+ 
+       const batches = Array.isArray(cell.batches) ? cell.batches : [];
+       for (const b of batches) {
+-        const bf = b?.faculty?.toString?.() ? b.faculty.toString() : b?.faculty ? String(b.faculty) : null;
++        const bf = b?.faculty?.toString?.()
++          ? b.faculty.toString()
++          : b?.faculty
++            ? String(b.faculty)
++            : null;
+         if (bf && bf === fid) {
+           slots.add(String(key));
+           return;
+@@ -140,7 +162,11 @@ const extractBusySlotsForCandidate = (timetables, candidateId, dayNameSet) => {
+   return extractFacultySlotsFromTimetables(timetables, candidateId, dayNameSet);
+ };
+ 
+-const computeLeaveAffectedSlotsFromFacultyUpload = async (facultyId, sd, ed) => {
++const computeLeaveAffectedSlotsFromFacultyUpload = async (
++  facultyId,
++  sd,
++  ed,
++) => {
+   const tt = await FacultyTimetable.findOne({ faculty: facultyId }).lean();
+   const busy = new Set((tt?.busySlots || []).map((s) => String(s)));
+   if (busy.size === 0) return new Set();
+@@ -320,11 +346,9 @@ router.post("/", protect, upload.single("attachment"), async (req, res) => {
+       leaveType === "medical" && totalDays >= 3;
+ 
+     if (req.file && leaveType !== "medical") {
+-      return res
+-        .status(400)
+-        .json({
+-          message: "Attachment upload is only allowed for medical leave.",
+-        });
++      return res.status(400).json({
++        message: "Attachment upload is only allowed for medical leave.",
++      });
+     }
+     if (mlCertificateRequired && !req.file) {
+       return res.status(400).json({
+@@ -355,9 +379,10 @@ router.post("/", protect, upload.single("attachment"), async (req, res) => {
+ 
+     // ✅ Substitute auto-suggest using timetable availability (AI + schedule constraints)
+     const department = req.user.department;
+-    const timetables = await Timetable.find({ department, isActive: true }).select(
+-      "schedule department",
+-    );
++    const timetables = await Timetable.find({
++      department,
++      isActive: true,
++    }).select("schedule department");
+ 
+     const dayNamesInRange = new Set(
+       enumerateDaysInclusive(sd, ed)
+@@ -387,7 +412,11 @@ router.post("/", protect, upload.single("attachment"), async (req, res) => {
+     const timetableFiltered = availableFaculty.filter((candidate) => {
+       if (candidate._id.toString() === req.user._id.toString()) return false;
+       if (affectedSlots.size === 0) return true; // nothing to check
+-      const busy = extractBusySlotsForCandidate(timetables, candidate._id, dayNamesInRange);
++      const busy = extractBusySlotsForCandidate(
++        timetables,
++        candidate._id,
++        dayNamesInRange,
++      );
+       for (const slot of affectedSlots) {
+         if (busy.has(String(slot))) return false;
+       }
+@@ -398,6 +427,18 @@ router.post("/", protect, upload.single("attachment"), async (req, res) => {
+       suggestSubstitutes(timetableFiltered, req.user)[0]?._id || null;
+     const history = await Leave.find({ faculty: req.user._id });
+ 
++    /* Upload attachment to Cloudinary if present */
++    let attachmentUrl = null;
++    let attachmentPublicId = null;
++    if (req.file) {
++      const uploaded = await uploadToCloudinary(
++        req.file.buffer,
++        "leave-certificates",
++      );
++      attachmentUrl = uploaded.secure_url;
++      attachmentPublicId = uploaded.public_id;
++    }
++
+     const leave = await Leave.create({
+       faculty: req.user._id,
+       leaveType,
+@@ -429,9 +470,8 @@ router.post("/", protect, upload.single("attachment"), async (req, res) => {
+ 
+       mlCertificateRequired,
+       mlCertificateReceived: false,
+-      mlCertificateAttachment: req.file
+-        ? `/uploads/leave-attachments/${req.file.filename}`
+-        : null,
++      mlCertificateAttachment: attachmentUrl,
++      mlCertificatePublicId: attachmentPublicId,
+       fitnessCertificateRequired,
+ 
+       aiPredictionScore: predictLeaveRisk(history),
+@@ -564,7 +604,10 @@ router.put("/:id/approve", protect, async (req, res) => {
+             .select("faculty busySlots")
+             .lean();
+           const byFaculty = new Map(
+-            tts.map((t) => [String(t.faculty), new Set((t.busySlots || []).map(String))]),
++            tts.map((t) => [
++              String(t.faculty),
++              new Set((t.busySlots || []).map(String)),
++            ]),
+           );
+ 
+           // If a candidate has no uploaded timetable, we treat them as "unknown availability" and allow them.
+@@ -599,7 +642,8 @@ router.put("/:id/approve", protect, async (req, res) => {
+               recipient: leave.faculty._id,
+               sender: req.user._id,
+               type: "substitute_assigned",
+-              message: "A substitute has been assigned for your approved leave.",
++              message:
++                "A substitute has been assigned for your approved leave.",
+               relatedLeave: leave._id,
+             },
+           ]);
+diff --git a/backend/routes/userRoutes.js b/backend/routes/userRoutes.js
+index 2d03457..bf994e2 100644
+--- a/backend/routes/userRoutes.js
++++ b/backend/routes/userRoutes.js
+@@ -2,9 +2,19 @@ const express = require("express");
+ const router = express.Router();
+ const User = require("../models/userModel");
+ const { protect } = require("../middleware/auth");
+-const path = require("path");
+-const fs = require("fs");
+ const upload = require("../middleware/upload");
++const cloudinary = require("../config/cloudinary");
++
++const uploadToCloudinary = (fileBuffer, folder) =>
++  new Promise((resolve, reject) => {
++    cloudinary.uploader
++      .upload_stream({ folder }, (err, result) => {
++        if (err) return reject(err);
++        resolve(result);
++      })
++      .end(fileBuffer);
++  });
++
+ router.post("/avatar", protect, upload.single("avatar"), async (req, res) => {
+   try {
+     if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+@@ -12,13 +22,19 @@ router.post("/avatar", protect, upload.single("avatar"), async (req, res) => {
+     const user = await User.findById(req.user._id);
+     if (!user) return res.status(404).json({ message: "User not found" });
+ 
+-    // delete old avatar
+-    if (user.avatar) {
+-      const oldPath = path.join(__dirname, "../", user.avatar);
+-      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
++    // delete old avatar in Cloudinary
++    if (user.avatarPublicId) {
++      try {
++        await cloudinary.uploader.destroy(user.avatarPublicId);
++      } catch (e) {
++        console.warn("Cloudinary delete failed (avatar):", e.message);
++      }
+     }
+ 
+-    user.avatar = `/uploads/avatars/${req.file.filename}`;
++    const result = await uploadToCloudinary(req.file.buffer, "faculty-avatars");
++
++    user.avatar = result.secure_url;
++    user.avatarPublicId = result.public_id;
+     await user.save();
+ 
+     return res.json({
+@@ -26,7 +42,8 @@ router.post("/avatar", protect, upload.single("avatar"), async (req, res) => {
+       avatar: user.avatar,
+     });
+   } catch (error) {
+-    return res.status(500).json({ message: error.message });
++    console.error("Avatar upload error:", error);
++    return res.status(500).json({ message: error.message || "Upload failed" });
+   }
+ });
+ 
+@@ -35,97 +52,22 @@ router.delete("/avatar", protect, async (req, res) => {
+     const user = await User.findById(req.user._id);
+     if (!user) return res.status(404).json({ message: "User not found" });
+ 
+-    if (user.avatar) {
+-      const filePath = path.join(__dirname, "../", user.avatar);
+-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+-      user.avatar = null;
+-      await user.save();
++    if (user.avatarPublicId) {
++      try {
++        await cloudinary.uploader.destroy(user.avatarPublicId);
++      } catch (e) {
++        console.warn("Cloudinary delete failed (avatar):", e.message);
++      }
+     }
+ 
+-    return res.json({ message: "Avatar removed successfully" });
+-  } catch (error) {
+-    return res.status(500).json({ message: error.message });
+-  }
+-});
+-
+-router.get("/substitutes", protect, async (req, res) => {
+-  try {
+-    // faculty/hod/admin can call, but result is restricted to caller's department
+-    const users = await User.find({
+-      department: req.user.department,
+-      role: "faculty",
+-      _id: { $ne: req.user._id },
+-      isAvailable: { $ne: false },
+-    })
+-      .select("-password")
+-      .sort({ name: 1 });
+-
+-    return res.json(users);
+-  } catch (error) {
+-    return res.status(500).json({ message: error.message });
+-  }
+-});
+-
+-/* Admin-only list all */
+-router.get("/faculty/all", protect, async (req, res) => {
+-  try {
+-    if (req.user.role !== "admin")
+-      return res.status(403).json({ message: "Admin access required" });
+-
+-    const { department } = req.query;
+-    const query = {};
+-    if (department) query.department = department;
+-
+-    const users = await User.find(query)
+-      .select("-password")
+-      .sort({ department: 1, name: 1 });
+-    return res.json(users);
+-  } catch (error) {
+-    return res.status(500).json({ message: error.message });
+-  }
+-});
+-
+-/* HOD-only list department */
+-router.get("/faculty/department", protect, async (req, res) => {
+-  try {
+-    if (req.user.role !== "hod")
+-      return res.status(403).json({ message: "HOD access required" });
+-
+-    const users = await User.find({ department: req.user.department })
+-      .select("-password")
+-      .sort({ name: 1 });
+-
+-    return res.json(users);
+-  } catch (error) {
+-    return res.status(500).json({ message: error.message });
+-  }
+-});
+-
+-/* HOD-only allocate subjects using fat model method */
+-router.put("/:id/subjects", protect, async (req, res) => {
+-  try {
+-    const teacher = await User.assignSubjectsByHod(
+-      req.user,
+-      req.params.id,
+-      req.body.subjects,
+-    );
++    user.avatar = null;
++    user.avatarPublicId = null;
++    await user.save();
+ 
+-    return res.json({
+-      message: "Subjects updated successfully",
+-      user: {
+-        _id: teacher._id,
+-        name: teacher.name,
+-        email: teacher.email,
+-        role: teacher.role,
+-        department: teacher.department,
+-        program: teacher.program,
+-        designation: teacher.designation,
+-        subjects: teacher.subjects,
+-        avatar: teacher.avatar,
+-      },
+-    });
++    return res.json({ message: "Avatar removed successfully" });
+   } catch (error) {
+-    return res.status(error.statusCode || 500).json({ message: error.message });
++    console.error("Avatar delete error:", error);
++    return res.status(500).json({ message: error.message || "Delete failed" });
+   }
+ });
+ 
+diff --git a/frontend/src/components/LeaveAnalytics.jsx b/frontend/src/components/LeaveAnalytics.jsx
+index a33ee31..524820a 100644
+--- a/frontend/src/components/LeaveAnalytics.jsx
++++ b/frontend/src/components/LeaveAnalytics.jsx
+@@ -66,7 +66,7 @@ const LeaveAnalytics = () => {
+     let dateLabels = [];
+ 
+     if (range === "daily") {
+-      // Show last 7 days
++      // last 7 days (oldest -> newest)
+       for (let i = 6; i >= 0; i--) {
+         const date = new Date(today);
+         date.setDate(date.getDate() - i);
+@@ -82,27 +82,24 @@ const LeaveAnalytics = () => {
+         const startDate = new Date(leave.startDate);
+         const endDate = new Date(leave.endDate);
+ 
+-        // Count leaves for each day in the range
+         let currentDate = new Date(startDate);
+         while (currentDate <= endDate && currentDate <= today) {
+           const dateStr = currentDate.toISOString().split("T")[0];
+-          if (groupedData[dateStr]) {
+-            groupedData[dateStr].count += 1;
+-          }
++          if (groupedData[dateStr]) groupedData[dateStr].count += 1;
+           currentDate.setDate(currentDate.getDate() + 1);
+         }
+       });
+     } else if (range === "weekly") {
+-      // Show last 4 weeks
++      // last 4 weeks, oldest W1 ... current W4
+       for (let i = 3; i >= 0; i--) {
+         const date = new Date(today);
+         date.setDate(date.getDate() - i * 7);
+         const weekStart = new Date(date);
+-        weekStart.setDate(date.getDate() - date.getDay());
++        weekStart.setDate(date.getDate() - date.getDay()); // Sunday
+         const weekEnd = new Date(weekStart);
+         weekEnd.setDate(weekStart.getDate() + 6);
+ 
+-        const weekLabel = `W${Math.ceil((date.getDate() - date.getDay() + 1) / 7)}`;
++        const weekLabel = `W${4 - i}`;
+         const weekKey = weekStart.toISOString().split("T")[0];
+         groupedData[weekKey] = {
+           label: weekLabel,
+@@ -113,20 +110,16 @@ const LeaveAnalytics = () => {
+         dateLabels.push(weekKey);
+       }
+ 
++      // Count approved leaves overlapping each week
+       leaves.forEach((leave) => {
+-        const leaveStart = new Date(leave.startDate);
+-        const leaveEnd = new Date(leave.endDate);
+-
+-        Object.keys(groupedData).forEach((weekKey) => {
+-          const week = groupedData[weekKey];
+-          // Check if leave overlaps with this week
+-          if (leaveStart <= week.weekEnd && leaveEnd >= week.weekStart) {
+-            week.count += 1;
+-          }
++        const ls = new Date(leave.startDate);
++        const le = new Date(leave.endDate);
++        Object.values(groupedData).forEach((w) => {
++          if (le < w.weekStart || ls > w.weekEnd) return;
++          w.count += 1;
+         });
+       });
+     } else if (range === "monthly") {
+-      // Show last 12 months
+       const months = [
+         "Jan",
+         "Feb",
+@@ -163,29 +156,45 @@ const LeaveAnalytics = () => {
+         let currentDate = new Date(leaveStart);
+         while (currentDate <= leaveEnd) {
+           const monthKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, "0")}`;
+-          if (groupedData[monthKey]) {
+-            groupedData[monthKey].count += 1;
+-          }
++          if (groupedData[monthKey]) groupedData[monthKey].count += 1;
+           currentDate.setDate(currentDate.getDate() + 1);
+         }
+       });
+     }
+ 
+-    // Build final chart data
+     const chartDataArray = dateLabels.map((key) => groupedData[key]);
+-
+-    // Calculate stats
+     const values = chartDataArray.map((d) => d.count);
+     const totalLeaves = values.reduce((a, b) => a + b, 0);
+-    const firstHalf = values.slice(0, Math.floor(values.length / 2));
+-    const secondHalf = values.slice(Math.floor(values.length / 2));
+-    const firstHalfSum = firstHalf.reduce((a, b) => a + b, 0) || 1;
+-    const secondHalfSum = secondHalf.reduce((a, b) => a + b, 0) || 0;
+-    const absoluteIncrease = secondHalfSum - firstHalfSum;
+-    const percentageIncrease =
+-      firstHalfSum > 0
+-        ? Math.round((absoluteIncrease / firstHalfSum) * 100)
+-        : 0;
++
++    // Stats:
++    // For weekly: current (last) vs previous (second-last)
++    // For others: second half vs first half
++    let absoluteIncrease = 0;
++    let percentageIncrease = 0;
++
++    if (range === "weekly" && values.length >= 2) {
++      const prev = values[values.length - 2];
++      const curr = values[values.length - 1];
++      absoluteIncrease = curr - prev;
++      percentageIncrease =
++        prev === 0
++          ? curr > 0
++            ? 100
++            : 0
++          : Math.round((absoluteIncrease / prev) * 100);
++    } else {
++      const firstHalf = values.slice(0, Math.floor(values.length / 2));
++      const secondHalf = values.slice(Math.floor(values.length / 2));
++      const firstHalfSum = firstHalf.reduce((a, b) => a + b, 0);
++      const secondHalfSum = secondHalf.reduce((a, b) => a + b, 0);
++      absoluteIncrease = secondHalfSum - firstHalfSum;
++      percentageIncrease =
++        firstHalfSum === 0
++          ? secondHalfSum > 0
++            ? 100
++            : 0
++          : Math.round((absoluteIncrease / firstHalfSum) * 100);
++    }
+ 
+     return {
+       data: chartDataArray,
+diff --git a/frontend/src/components/leaves/leaveCard.jsx b/frontend/src/components/leaves/leaveCard.jsx
+index fef9c51..1016dc9 100644
+--- a/frontend/src/components/leaves/leaveCard.jsx
++++ b/frontend/src/components/leaves/leaveCard.jsx
+@@ -140,11 +140,7 @@ const LeaveCard = ({ leave, onUpdate }) => {
+     }
+   };
+ 
+-  const attachmentUrl =
+-    leave?.mlCertificateAttachment &&
+-    leave.mlCertificateAttachment.startsWith("/uploads")
+-      ? `${import.meta.env.VITE_API_BASE_URL || "http://localhost:5000"}${leave.mlCertificateAttachment}`
+-      : null;
++  const attachmentUrl = leave?.mlCertificateAttachment || null;
+ 
+   return (
+     <>
+diff --git a/frontend/src/pages/applyLeavePage.jsx b/frontend/src/pages/applyLeavePage.jsx
+index 79e51ac..6b61a21 100644
+--- a/frontend/src/pages/applyLeavePage.jsx
++++ b/frontend/src/pages/applyLeavePage.jsx
+@@ -18,6 +18,7 @@ import {
+ import dayjs from "dayjs";
+ import API from "../api/axiosInstance";
+ import { useAuth } from "../context/authContext";
++import { useNavigate } from "react-router-dom";
+ 
+ const LEAVE_TYPES = [
+   { key: "casual", label: "Casual Leave (CL)" },
+@@ -29,6 +30,7 @@ const LEAVE_TYPES = [
+ ];
+ 
+ const ApplyLeavePage = () => {
++  const navigate = useNavigate();
+   const { user } = useAuth();
+   const isFaculty = user?.role === "faculty";
+ 
+@@ -140,32 +142,24 @@ const ApplyLeavePage = () => {
+ 
+     try {
+       if (attachment) {
+-        // multipart
+         const fd = new FormData();
+         fd.append("leaveType", leaveType);
+         fd.append("startDate", startDate);
+         fd.append("endDate", endDate);
+         fd.append("reason", reason.trim());
+         fd.append("substituteRequested", substitute.name);
+-
+         fd.append("dayType", dayType);
+         if (dayType === "HALF") fd.append("halfSession", halfSession);
+-
+-        // optional
+         fd.append("affectedClasses", JSON.stringify([]));
+         fd.append("isUrgent", "false");
+         fd.append("isDuringExamPeriod", "false");
+         fd.append("isDuringTeaching", "false");
++        fd.append("attachment", attachment); // matches backend upload.single("attachment")
+ 
+-        fd.append("attachment", attachment); // MUST match backend upload.single("attachment")
+-
+-        // 1) navigate to dashboard
+-        navigate("/dashboard");
+-
+-        // 2) OR if you stay on the page, trigger a refresh event:
+-        window.dispatchEvent(new Event("leaves:changed"));
++        await API.post("/leaves", fd, {
++          headers: { "Content-Type": "multipart/form-data" },
++        });
+       } else {
+-        // JSON
+         await API.post("/leaves", {
+           leaveType,
+           startDate,
+@@ -188,11 +182,12 @@ const ApplyLeavePage = () => {
+       setReason("");
+       setSubstitute(null);
+       setAttachment(null);
++      navigate("/dashboard");
++      window.dispatchEvent(new Event("leaves:changed"));
+     } catch (e) {
+       setError(
+         e?.response?.data?.message || "Failed to submit leave application.",
+       );
+-      // keep dev logging
+       console.error(
+         "Leave submit error:",
+         e?.response?.status,
+diff --git a/frontend/src/pages/dashboardPage.jsx b/frontend/src/pages/dashboardPage.jsx
+index e983462..c083b6f 100644
+--- a/frontend/src/pages/dashboardPage.jsx
++++ b/frontend/src/pages/dashboardPage.jsx
+@@ -2154,22 +2154,8 @@ const DashboardPage = () => {
+ 
+             <LeaveBalanceTiles balance={balance} />
+             <RequestStatusTracker leaves={leaves} />
+-            <PersonalLeaveCalendar leaves={leaves} />
+ 
+-            <Box sx={{ mb: 2.5 }}>
+-              <Button
+-                variant="contained"
+-                sx={{
+-                  bgcolor: "#7c3aed",
+-                  "&:hover": { bgcolor: "#6d28d9" },
+-                  px: 3,
+-                  py: 1.2,
+-                  fontWeight: 700,
+-                }}
+-              >
+-                + Apply for Leave
+-              </Button>
+-            </Box>
++            <LeaveAnalytics />
+           </Box>
+         )}
+ 

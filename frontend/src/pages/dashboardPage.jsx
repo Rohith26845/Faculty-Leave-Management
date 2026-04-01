@@ -2154,22 +2154,8 @@ const DashboardPage = () => {
 
             <LeaveBalanceTiles balance={balance} />
             <RequestStatusTracker leaves={leaves} />
-            <PersonalLeaveCalendar leaves={leaves} />
 
-            <Box sx={{ mb: 2.5 }}>
-              <Button
-                variant="contained"
-                sx={{
-                  bgcolor: "#7c3aed",
-                  "&:hover": { bgcolor: "#6d28d9" },
-                  px: 3,
-                  py: 1.2,
-                  fontWeight: 700,
-                }}
-              >
-                + Apply for Leave
-              </Button>
-            </Box>
+            <LeaveAnalytics />
           </Box>
         )}
 

@@ -100,6 +100,7 @@ const leaveSchema = new mongoose.Schema(
 
     // ✅ NEW: uploaded file path (pdf/image)
     mlCertificateAttachment: { type: String, default: null },
+    mlCertificatePublicId: { type: String, default: null },
 
     // Policy: ML >= 3 days => also provide fitness certificate on return (tracked as requirement flag)
     fitnessCertificateRequired: { type: Boolean, default: false },

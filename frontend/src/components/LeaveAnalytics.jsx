@@ -66,7 +66,7 @@ const LeaveAnalytics = () => {
     let dateLabels = [];
 
     if (range === "daily") {
-      // Show last 7 days
+      // last 7 days (oldest -> newest)
       for (let i = 6; i >= 0; i--) {
         const date = new Date(today);
         date.setDate(date.getDate() - i);
@@ -82,27 +82,24 @@ const LeaveAnalytics = () => {
         const startDate = new Date(leave.startDate);
         const endDate = new Date(leave.endDate);
 
-        // Count leaves for each day in the range
         let currentDate = new Date(startDate);
         while (currentDate <= endDate && currentDate <= today) {
           const dateStr = currentDate.toISOString().split("T")[0];
-          if (groupedData[dateStr]) {
-            groupedData[dateStr].count += 1;
-          }
+          if (groupedData[dateStr]) groupedData[dateStr].count += 1;
           currentDate.setDate(currentDate.getDate() + 1);
         }
       });
     } else if (range === "weekly") {
-      // Show last 4 weeks
+      // last 4 weeks, oldest W1 ... current W4
       for (let i = 3; i >= 0; i--) {
         const date = new Date(today);
         date.setDate(date.getDate() - i * 7);
         const weekStart = new Date(date);
-        weekStart.setDate(date.getDate() - date.getDay());
+        weekStart.setDate(date.getDate() - date.getDay()); // Sunday
         const weekEnd = new Date(weekStart);
         weekEnd.setDate(weekStart.getDate() + 6);
 
-        const weekLabel = `W${Math.ceil((date.getDate() - date.getDay() + 1) / 7)}`;
+        const weekLabel = `W${4 - i}`;
         const weekKey = weekStart.toISOString().split("T")[0];
         groupedData[weekKey] = {
           label: weekLabel,
@@ -113,20 +110,16 @@ const LeaveAnalytics = () => {
         dateLabels.push(weekKey);
       }
 
+      // Count approved leaves overlapping each week
       leaves.forEach((leave) => {
-        const leaveStart = new Date(leave.startDate);
-        const leaveEnd = new Date(leave.endDate);
-
-        Object.keys(groupedData).forEach((weekKey) => {
-          const week = groupedData[weekKey];
-          // Check if leave overlaps with this week
-          if (leaveStart <= week.weekEnd && leaveEnd >= week.weekStart) {
-            week.count += 1;
-          }
+        const ls = new Date(leave.startDate);
+        const le = new Date(leave.endDate);
+        Object.values(groupedData).forEach((w) => {
+          if (le < w.weekStart || ls > w.weekEnd) return;
+          w.count += 1;
         });
       });
     } else if (range === "monthly") {
-      // Show last 12 months
       const months = [
         "Jan",
         "Feb",
@@ -163,29 +156,45 @@ const LeaveAnalytics = () => {
         let currentDate = new Date(leaveStart);
         while (currentDate <= leaveEnd) {
           const monthKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, "0")}`;
-          if (groupedData[monthKey]) {
-            groupedData[monthKey].count += 1;
-          }
+          if (groupedData[monthKey]) groupedData[monthKey].count += 1;
           currentDate.setDate(currentDate.getDate() + 1);
         }
       });
     }
 
-    // Build final chart data
     const chartDataArray = dateLabels.map((key) => groupedData[key]);
-
-    // Calculate stats
     const values = chartDataArray.map((d) => d.count);
     const totalLeaves = values.reduce((a, b) => a + b, 0);
-    const firstHalf = values.slice(0, Math.floor(values.length / 2));
-    const secondHalf = values.slice(Math.floor(values.length / 2));
-    const firstHalfSum = firstHalf.reduce((a, b) => a + b, 0) || 1;
-    const secondHalfSum = secondHalf.reduce((a, b) => a + b, 0) || 0;
-    const absoluteIncrease = secondHalfSum - firstHalfSum;
-    const percentageIncrease =
-      firstHalfSum > 0
-        ? Math.round((absoluteIncrease / firstHalfSum) * 100)
-        : 0;
+
+    // Stats:
+    // For weekly: current (last) vs previous (second-last)
+    // For others: second half vs first half
+    let absoluteIncrease = 0;
+    let percentageIncrease = 0;
+
+    if (range === "weekly" && values.length >= 2) {
+      const prev = values[values.length - 2];
+      const curr = values[values.length - 1];
+      absoluteIncrease = curr - prev;
+      percentageIncrease =
+        prev === 0
+          ? curr > 0
+            ? 100
+            : 0
+          : Math.round((absoluteIncrease / prev) * 100);
+    } else {
+      const firstHalf = values.slice(0, Math.floor(values.length / 2));
+      const secondHalf = values.slice(Math.floor(values.length / 2));
+      const firstHalfSum = firstHalf.reduce((a, b) => a + b, 0);
+      const secondHalfSum = secondHalf.reduce((a, b) => a + b, 0);
+      absoluteIncrease = secondHalfSum - firstHalfSum;
+      percentageIncrease =
+        firstHalfSum === 0
+          ? secondHalfSum > 0
+            ? 100
+            : 0
+          : Math.round((absoluteIncrease / firstHalfSum) * 100);
+    }
 
     return {
       data: chartDataArray,
